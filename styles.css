@@ -35,6 +35,7 @@
   opacity: 0.5;
   user-select: none;
   vertical-align: middle; /* 微调垂直对齐 */
+  transform: translateY(-2px); /* 向上微调 2px，根据字体不同可手动改为 -1px 或 -3px */
 }
 
 .law-copy-btn:hover {
@@ -46,4 +47,5 @@
   margin-left: 0;
   margin-right: 0.5em;
   width: auto;
+
 }
