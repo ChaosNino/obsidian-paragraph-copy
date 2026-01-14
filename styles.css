@@ -1,0 +1,49 @@
+/* ============================================================
+   使用 CSS 变量定义默认值，实际值会由 JS 动态写入 body 样式
+   ============================================================ */
+:root {
+  --lac-indent-size: 2em; /* 默认值 */
+}
+
+/* ===== 模式 1：首行缩进 (First Line Indent) ===== */
+.lac-indent-first {
+  text-indent: var(--lac-indent-size);
+}
+
+/* ===== 模式 2：悬挂缩进 (Hanging Indent) ===== */
+.lac-indent-hanging {
+  /* 悬挂缩进的核心：左内边距 - 首行缩进 */
+  padding-left: var(--lac-indent-size);
+  text-indent: calc(var(--lac-indent-size) * -1);
+}
+
+/* ===== 复制按钮样式 ===== */
+.law-copy-btn {
+  cursor: pointer;
+  display: inline-block;
+  
+  /* 按钮宽度等于缩进宽度 */
+  width: var(--lac-indent-size); 
+  
+  /* 将按钮拉回左侧，使其占据缩进的空白区域 */
+  margin-left: calc(var(--lac-indent-size) * -1);
+  
+  text-align: center;
+  text-indent: 0; /* 防止图标继承父元素的缩进 */
+  margin-right: 0;
+  
+  opacity: 0.5;
+  user-select: none;
+  vertical-align: middle; /* 微调垂直对齐 */
+}
+
+.law-copy-btn:hover {
+  opacity: 1;
+}
+
+/* 如果用户选择了“无缩进”，我们需要微调按钮让它不要覆盖文字 */
+.lac-no-indent .law-copy-btn {
+  margin-left: 0;
+  margin-right: 0.5em;
+  width: auto;
+}
