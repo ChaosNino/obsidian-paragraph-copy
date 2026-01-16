@@ -3,9 +3,10 @@
   "name": "Paragraph Copy",
   "version": "1.0.0",
   "minAppVersion": "1.5.0",
-  "description": "Custom regex matching for paragraphs to auto-add copy buttons. 自定义正则匹配段落，自动添加复制按钮。",
+  "description": "Custom regex matching for paragraphs to auto-add copy buttons.",
   "author": "Chaos Nino",
   "isDesktopOnly": false
 }
+
 
 
