@@ -1,20 +1,24 @@
-const { Plugin, Notice, PluginSettingTab, Setting, AbstractInputSuggest, TFolder } = require("obsidian");
+const { Plugin, Notice, PluginSettingTab, Setting, AbstractInputSuggest, TFolder, htmlToMarkdown } = require("obsidian");
 
 // =======================================================
-// 1. 国际化 (i18n) 配置 / Internationalization Config
+// 1. 国际化 (i18n) 配置
 // =======================================================
 const currentLang = window.localStorage.getItem('language') || 'en';
 const isChinese = currentLang.startsWith('zh');
 
 const TEXTS = {
   zh: {
-    settingTitle: "段落复制与格式化",
+    settingTitle: "段落复制",
     regexName: "正则表达式 (每行一个)",
-    regexDesc: "匹配到以下规则的段落将显示图标并缩进",
+    regexDesc: "匹配到以下规则的段落将显示复制图标",
     regexPlaceholder: "^第.+条\n^Article",
+    
+    copyMarkdownName: "复制包含 Markdown 语法",
+    copyMarkdownDesc: "开启后，复制的内容将保留链接、粗体等 Markdown 格式；关闭则仅复制纯文本。",
+
     indentModeName: "缩进模式",
     indentFirst: "首行缩进",
-    indentHanging: "悬挂缩进",
+    indentHanging: "悬挂缩进", 
     indentNone: "无缩进",
     indentSaved: "设置已保存，请刷新笔记查看效果",
     indentSizeName: "缩进大小",
@@ -34,13 +38,17 @@ const TEXTS = {
     duplicateFolder: "文件夹已存在"
   },
   en: {
-    settingTitle: "Paragraph Copy & Formatting",
+    settingTitle: "Paragraph Copy",
     regexName: "Regex Patterns (One per line)",
-    regexDesc: "Paragraphs matching these rules will get a copy button and indentation.",
+    regexDesc: "Paragraphs matching these rules will get a copy button.",
     regexPlaceholder: "^Article\n^Section",
+
+    copyMarkdownName: "Copy with Markdown Syntax",
+    copyMarkdownDesc: "If enabled, copied content will preserve links, bold, etc. If disabled, it copies plain text.",
+
     indentModeName: "Indentation Mode",
     indentFirst: "First Line",
-    indentHanging: "Hanging",
+    indentHanging: "Hanging Indent", 
     indentNone: "None",
     indentSaved: "Settings saved. Please reload/reopen the note to see changes.",
     indentSizeName: "Indent Size",
@@ -66,37 +74,29 @@ function t(key) {
 }
 
 // =======================================================
-// 2. 默认设置 / Default Settings
+// 2. 默认设置
 // =======================================================
 const DEFAULT_SETTINGS = {
   whitelistFolders: [],
-  // 包含中文习惯(第x条) 和 英文习惯(Article/Section/Chapter)
   regexPatterns: "^(\\**)?第.+条\n^\\d+(\\.\\d+)+\\s*\n^\\d+\\.\\s*\n^\\d+、\\s*\n^Article\\s+\\d+\n^Section\\s+\\d+\n^Chapter\\s+\\d+",
   indentType: "first", 
-  indentSize: "2em"
+  indentSize: "2em",
+  copyWithMarkdown: false
 };
 
 // =======================================================
-// 3. 核心插件类 / Main Plugin Class
+// 3. 核心插件类
 // =======================================================
 module.exports = class ParagraphCopyPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
-    
-    // 注册设置页面
     this.addSettingTab(new ParagraphCopySettingTab(this.app, this));
-    
-    // 初始化样式
     this.updateStyleVariables();
-
-    // 注册Markdown处理器
     this.registerMarkdownPostProcessor(this.postProcessor.bind(this));
   }
 
-  // 渲染后处理逻辑
   postProcessor(el, ctx) {
     try {
-      // 1. 白名单检查
       if (this.settings.whitelistFolders && this.settings.whitelistFolders.length > 0) {
         if (!ctx.sourcePath) return;
         const matched = this.settings.whitelistFolders.some(folder =>
@@ -105,39 +105,39 @@ module.exports = class ParagraphCopyPlugin extends Plugin {
         if (!matched) return;
       }
 
-      // 2. 获取编译后的正则
       const patterns = this.getCompiledRegexs();
       if (patterns.length === 0) return;
 
-      // 3. 遍历并处理段落
       const paragraphs = el.querySelectorAll("p");
       paragraphs.forEach((p, index) => {
         const text = p.innerText?.trim();
         if (!text) return;
 
-        // 检查是否匹配正则
         const isMatch = patterns.some(regex => regex.test(text));
         if (!isMatch) return;
 
-        // 防止重复添加按钮
         if (p.querySelector(".law-copy-btn")) return;
 
-        // 创建复制按钮
         const btn = document.createElement("span");
         btn.textContent = t('copyBtnText');
         btn.className = "law-copy-btn";
         btn.title = t('copyBtnTitle');
         btn.setAttribute("aria-label", t('copyBtnAria'));
 
-        // 绑定点击事件
         btn.onclick = (e) => this.handleCopy(e, paragraphs, index, patterns, btn);
 
-        // 应用缩进样式
+        // 重置样式类
         p.classList.remove("lac-indent-first", "lac-indent-hanging", "lac-no-indent");
-        const type = this.settings.indentType || "first";
-        if (type === "first") p.classList.add("lac-indent-first");
-        else if (type === "hanging") p.classList.add("lac-indent-hanging");
-        else p.classList.add("lac-no-indent");
+        
+        // 根据设置添加对应类名
+        const type = this.settings.indentType;
+        if (type === "hanging") {
+            p.classList.add("lac-indent-hanging"); // === 恢复悬挂逻辑 ===
+        } else if (type === "first") {
+            p.classList.add("lac-indent-first");
+        } else {
+            p.classList.add("lac-no-indent");
+        }
 
         p.prepend(btn);
       });
@@ -146,13 +146,11 @@ module.exports = class ParagraphCopyPlugin extends Plugin {
     }
   }
 
-  // 处理复制逻辑
   async handleCopy(e, paragraphs, index, patterns, btn) {
     e.preventDefault();
     e.stopPropagation();
     const lines = [];
 
-    // 向下收集文本，直到遇到下一个匹配项
     for (let i = index; i < paragraphs.length; i++) {
       const original = paragraphs[i];
       const currentText = original.innerText.trim();
@@ -162,12 +160,17 @@ module.exports = class ParagraphCopyPlugin extends Plugin {
         if (isNextMatch) break;
       }
 
-      // 克隆节点并清洗数据
       const clone = original.cloneNode(true);
       clone.querySelectorAll(".law-copy-btn, .snw-block-preview, .snw-link-preview").forEach(x => x.remove());
       
-      let cleaned = clone.innerText.trim();
-      cleaned = cleaned.replace(/\s*\^[a-zA-Z0-9_-]+$/, ""); // 去除块ID
+      let cleaned = "";
+      if (this.settings.copyWithMarkdown) {
+        cleaned = htmlToMarkdown(clone).trim();
+      } else {
+        cleaned = clone.innerText.trim();
+      }
+
+      cleaned = cleaned.replace(/\s*\^[a-zA-Z0-9_-]+$/, ""); 
       lines.push(cleaned);
     }
 
@@ -213,9 +216,6 @@ module.exports = class ParagraphCopyPlugin extends Plugin {
   }
 };
 
-// =======================================================
-// 4. 文件夹建议类 / Folder Suggest Class
-// =======================================================
 class FolderSuggest extends AbstractInputSuggest {
   constructor(app, inputEl, onSelectCallback) {
     super(app, inputEl);
@@ -247,9 +247,6 @@ class FolderSuggest extends AbstractInputSuggest {
   }
 }
 
-// =======================================================
-// 5. 设置页类 / Setting Tab Class
-// =======================================================
 class ParagraphCopySettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -261,7 +258,6 @@ class ParagraphCopySettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("h2", { text: t('settingTitle') });
 
-    // --- 正则设置 ---
     new Setting(containerEl)
       .setName(t('regexName'))
       .setDesc(t('regexDesc'))
@@ -277,13 +273,25 @@ class ParagraphCopySettingTab extends PluginSettingTab {
         text.inputEl.cols = 50;
       });
 
-    // --- 缩进模式 ---
+    new Setting(containerEl)
+      .setName(t('copyMarkdownName'))
+      .setDesc(t('copyMarkdownDesc'))
+      .addToggle(toggle => {
+          toggle
+            .setValue(this.plugin.settings.copyWithMarkdown)
+            .onChange(async (value) => {
+                this.plugin.settings.copyWithMarkdown = value;
+                await this.plugin.saveSettings();
+            })
+      });
+
+    // === 重新加入悬挂缩进选项 ===
     new Setting(containerEl)
       .setName(t('indentModeName'))
       .addDropdown(drop => {
         drop
           .addOption("first", t('indentFirst'))
-          .addOption("hanging", t('indentHanging'))
+          .addOption("hanging", t('indentHanging')) // Added back
           .addOption("none", t('indentNone'))
           .setValue(this.plugin.settings.indentType)
           .onChange(async (value) => {
@@ -293,7 +301,6 @@ class ParagraphCopySettingTab extends PluginSettingTab {
           });
       });
 
-    // --- 缩进大小 ---
     new Setting(containerEl)
       .setName(t('indentSizeName'))
       .addText(text => {
@@ -306,13 +313,10 @@ class ParagraphCopySettingTab extends PluginSettingTab {
           });
       });
 
-    // --- 文件夹设置区域 ---
     containerEl.createEl("h3", { text: "Folder Settings" });
 
-    // 这里的关键：保存下方 TextArea 的引用，以便在搜索回调中直接更新它
     let folderListTextArea;
 
-    // 1. 搜索框
     new Setting(containerEl)
       .setName(t('folderSearchName'))
       .setDesc(t('folderSearchDesc'))
@@ -320,18 +324,14 @@ class ParagraphCopySettingTab extends PluginSettingTab {
         cb.setPlaceholder(t('folderSearchPlaceholder'));
         
         new FolderSuggest(this.app, cb.inputEl, async (folderPath) => {
-            // 查重逻辑
             if (!this.plugin.settings.whitelistFolders.includes(folderPath)) {
-                // 更新数据
                 this.plugin.settings.whitelistFolders.push(folderPath);
                 await this.plugin.saveSettings();
                 
-                // 核心修复：直接更新下方文本框的值，而不刷新整个页面
                 if (folderListTextArea) {
                     folderListTextArea.setValue(this.plugin.settings.whitelistFolders.join("\n"));
                 }
                 
-                // 清空搜索框并提示
                 cb.setValue("");
                 new Notice(`${t('addedFolder')}${folderPath}`);
             } else {
@@ -341,14 +341,11 @@ class ParagraphCopySettingTab extends PluginSettingTab {
         });
       });
 
-    // 2. 文件夹列表框
     new Setting(containerEl)
         .setName(t('folderName'))
         .setDesc(t('folderDesc'))
         .addTextArea(text => {
-            // 赋值给变量
             folderListTextArea = text;
-            
             text.setValue(this.plugin.settings.whitelistFolders.join("\n"))
                 .onChange(async (value) => {
                     this.plugin.settings.whitelistFolders = value.split("\n").map(v=>v.trim()).filter(v=>v.length>0);
